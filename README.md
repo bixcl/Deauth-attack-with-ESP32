@@ -400,6 +400,6 @@ The author is not responsible for misuse, damage, or disruption caused by this p
 
 **Repository:** [Deauth-attack-with-ESP32](https://github.com/yourusername/Deauth-attack-with-ESP32)
 
-**Author:** [Your Name]
+**Author:** [Ali Al-Balushi]
 
 **Last Updated:** September 2026
