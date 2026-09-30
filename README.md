@@ -115,9 +115,11 @@ Install:
 
 ---
 
-## 🛠 Fixing the Linker Error
+## 🛠 Fixing the ESP32 Linker Error: `-Wl,-z,muldefs`
 
-When compiling projects that use low-level ESP32 Wi-Fi functionality with newer ESP32 Arduino cores (for example, Core 3.x), you may encounter a linker error similar to:
+### Overview
+
+When compiling the ESP32 Deauth Attack project with newer **ESP32 Arduino Core 3.x** versions, you may encounter a linker error related to:
 
 ```text
 multiple definition of `ieee80211_raw_frame_sanity_check';
@@ -125,17 +127,281 @@ libnet80211.a(ieee80211_output.o): first defined here
 collect2.exe: error: ld returned 1 exit status
 ```
 
-This occurs when the compiled project and the ESP32 core both provide definitions for the same low-level Wi-Fi symbol.
+This happens because both the ESP32 core and the sketch define `ieee80211_raw_frame_sanity_check`, resulting in a **multiple-definition linker conflict**.
 
-### Alternative Version
+The fix is to add the following linker flag to the ESP32 core configuration:
 
-The original project documentation notes that **ESP32 Arduino Core 2.0.17** can avoid this particular conflict because the relevant function was treated as a weak symbol in older releases.
+```text
+-Wl,-z,muldefs
+```
 
-If you need to reproduce the original low-level research environment, using the documented compatible core version may be preferable to modifying the installed platform configuration.
-
-> **Important:** Changes to the ESP32 Arduino core's internal build configuration affect other projects using that installation. Make a backup before modifying core files.
+This tells the linker to allow multiple definitions of the same symbol.
 
 ---
+
+### Why Does This Happen?
+
+The ESP32 Arduino core includes a precompiled `libnet80211.a` library that defines:
+
+```text
+ieee80211_raw_frame_sanity_check
+```
+
+The project also provides its own definition of this function for low-level Wi-Fi frame testing.
+
+When the linker encounters both definitions, it normally stops with a multiple-definition error.
+
+Older ESP32 core versions handled this symbol differently, which is why projects using this technique may compile successfully with older versions but fail with newer ones.
+
+---
+
+## Step-by-Step Fix
+
+### Step 1 — Locate `platform.txt`
+
+The `platform.txt` file is located inside your ESP32 Arduino Core installation.
+
+#### Windows
+
+```text
+C:\Users\<YourUsername>\AppData\Local\Arduino15\packages\esp32\hardware\esp32\<version>\platform.txt
+```
+
+#### macOS
+
+```text
+~/Library/Arduino15/packages/esp32/hardware/esp32/<version>/platform.txt
+```
+
+#### Linux
+
+```text
+~/.arduino15/packages/esp32/hardware/esp32/<version>/platform.txt
+```
+
+Replace `<version>` with your installed ESP32 core version.
+
+For example:
+
+```text
+C:\Users\qgamr\AppData\Local\Arduino15\packages\esp32\hardware\esp32\3.3.11\platform.txt
+```
+
+> **Windows tip:** The `AppData` directory is hidden by default. You can open it quickly by entering `%LOCALAPPDATA%` into the File Explorer address bar.
+
+---
+
+### Step 2 — Open `platform.txt`
+
+Open `platform.txt` using a plain-text editor such as:
+
+* Notepad
+* Notepad++
+* Visual Studio Code
+
+Do **not** use Microsoft Word or another word processor because it can modify the file's formatting.
+
+> **Important:** Make a backup of `platform.txt` before modifying it. For example:
+>
+> ```text
+> platform.txt.bak
+> ```
+
+---
+
+### Step 3 — Find the Linker Configuration
+
+Open the file and search for:
+
+```text
+compiler.c.elf.extra_flags=
+```
+
+You can use:
+
+* **Ctrl + F** on Windows/Linux
+* **Cmd + F** on macOS
+
+You should find a line similar to:
+
+```text
+compiler.c.elf.extra_flags=
+```
+
+---
+
+### Step 4 — Add the Linker Flag
+
+Replace:
+
+```text
+compiler.c.elf.extra_flags=
+```
+
+with:
+
+```text
+compiler.c.elf.extra_flags=-Wl,-z,muldefs
+```
+
+### Before
+
+```text
+compiler.c.elf.extra_flags=
+```
+
+### After
+
+```text
+compiler.c.elf.extra_flags=-Wl,-z,muldefs
+```
+
+> **Important:** Make sure the flag is written exactly as shown:
+>
+> ```text
+> -Wl,-z,muldefs
+> ```
+>
+> There should be no additional spaces around the `=` sign.
+
+---
+
+### Step 5 — Save the File
+
+Save `platform.txt`.
+
+On Windows, you may be asked for administrator permission depending on where the ESP32 core is installed.
+
+If permission is required, allow the editor to save the modified file.
+
+---
+
+### Step 6 — Restart Arduino IDE
+
+Completely close **Arduino IDE** and open it again.
+
+Restarting the IDE ensures that the modified ESP32 core configuration is loaded.
+
+---
+
+### Step 7 — Recompile the Project
+
+Open the **Deauth-attack-with-ESP32** sketch.
+
+Click:
+
+**Verify** → ✓
+
+or:
+
+**Upload** → →
+
+The previous linker error should now be resolved.
+
+---
+
+## ✅ Verifying the Fix
+
+After recompiling, check the Arduino IDE output console.
+
+You should no longer see:
+
+```text
+multiple definition of `ieee80211_raw_frame_sanity_check'
+```
+
+A successful compilation should produce output similar to:
+
+```text
+Sketch uses X bytes (Y%) of program storage space.
+Global variables use X bytes (Y%) of dynamic memory.
+```
+
+If the linker error is still present, verify the following:
+
+1. You edited the correct `platform.txt`.
+2. The file belongs to the ESP32 core version currently selected/installed.
+3. The flag is written exactly as:
+
+   ```text
+   -Wl,-z,muldefs
+   ```
+4. The line is:
+
+   ```text
+   compiler.c.elf.extra_flags=-Wl,-z,muldefs
+   ```
+5. Arduino IDE was completely restarted after editing the file.
+
+---
+
+## ⚠️ Important Notes
+
+### ESP32 Core Updates
+
+Updating the ESP32 Arduino Core through the Arduino Boards Manager may overwrite `platform.txt`.
+
+If that happens, the linker flag will be removed and you may need to apply the fix again.
+
+### Backup Your Configuration
+
+Before editing the file, create a backup:
+
+```text
+platform.txt.bak
+```
+
+This allows you to restore the original configuration if something goes wrong.
+
+### The Flag Applies Globally
+
+The setting is part of the ESP32 core's build configuration, so it can affect **all sketches compiled using that core installation**, not only this project.
+
+---
+
+## 🔧 Troubleshooting
+
+| Problem                                         | Solution                                                                                                                     |
+| :---------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
+| **Cannot find `platform.txt`**                  | Verify that the ESP32 Arduino Core is installed through Boards Manager and check the correct core version directory.         |
+| **`AppData` is not visible on Windows**         | Enter `%LOCALAPPDATA%` in File Explorer and navigate to the ESP32 package directory.                                         |
+| **Permission denied when saving**               | Open the text editor with administrator privileges on Windows or use appropriate permissions on Linux/macOS.                 |
+| **The linker error still appears**              | Verify that the correct `platform.txt` was modified and that the exact linker flag was added. Restart Arduino IDE afterward. |
+| **Arduino IDE crashes or behaves unexpectedly** | Restore the original `platform.txt` from your backup and retry using a compatible ESP32 core version.                        |
+
+---
+
+## 🔄 Alternative: Downgrade the ESP32 Core
+
+If you do not want to modify `platform.txt`, an alternative is to use an older ESP32 Arduino Core version.
+
+The original project documentation identifies **ESP32 Arduino Core 2.0.17** as an alternative environment where this particular linker conflict does not require the `-Wl,-z,muldefs` workaround.
+
+You can change the installed ESP32 core version through:
+
+**Tools → Board → Boards Manager → esp32**
+
+Then select the required version.
+
+---
+
+## 📌 Quick Summary
+
+|  Step | Action                                                   |
+| :---: | :------------------------------------------------------- |
+| **1** | Locate `platform.txt`                                    |
+| **2** | Create a backup                                          |
+| **3** | Open `platform.txt`                                      |
+| **4** | Find `compiler.c.elf.extra_flags=`                       |
+| **5** | Change it to `compiler.c.elf.extra_flags=-Wl,-z,muldefs` |
+| **6** | Save the file                                            |
+| **7** | Restart Arduino IDE                                      |
+| **8** | Verify or upload the sketch                              |
+
+Once the configuration has been updated, recompile the project and verify that the `multiple definition of ieee80211_raw_frame_sanity_check` error is no longer present.
+
+
+
 
 ## 🎮 How to Use
 
